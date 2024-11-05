@@ -1,4 +1,5 @@
 import argparse
+import joblib
 
 from taxi_spark.functions.ml import prepare_features, train_linear_regression
 from taxi_spark.functions.processing import (
@@ -12,7 +13,7 @@ from taxi_spark.functions.session import get_spark_session
 
 
 def create_processed_pipeline(
-    staging_uri: str, processed_uri_prefix: str, date
+    staging_uri: str, processed_uri_prefix: str, date, bucket_name
 ) -> None:
     """
     Process raw data and create machine learning models.
@@ -43,9 +44,23 @@ def create_processed_pipeline(
         f"{processed_uri_prefix}/model_data_yellow_tripdata_{date}", mode="overwrite"
     )
     lr_model = train_linear_regression(ml_df)
-    lr_model.write().overwrite().save(
-        f"{processed_uri_prefix}/lr_model_yellow_tripdata_{date}"
-    )
+
+    file_name = f"lr_model_yellow_tripdata_{date}.joblib"
+
+    # lr_model.write().overwrite().save(file_path)
+
+    joblib.dump(lr_model, "./" + file_name, compress = 3)
+
+    blob_path = f"/processed/taxi_data/{file_name}"
+
+    from google.cloud import storage
+    srcPath = "./" + file_name
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(blob_path)
+    with open(srcPath, "w") as f:
+        blob.upload_from_file(f)
+
     df = add_time_bins(df)
     df = add_pickup_date(df)
     df = drop_coordinates(df)
@@ -72,7 +87,7 @@ def main() -> None:
     raw_uri = f"gs://{args.bucket}/staging/taxi_data/yellow_tripdata_{args.date}"
     processed_uri_prefix = f"gs://{args.bucket}/processed/taxi_data"
 
-    create_processed_pipeline(raw_uri, processed_uri_prefix, args.date)
+    create_processed_pipeline(raw_uri, processed_uri_prefix, args.date, args.bucket)
 
 
 if __name__ == "__main__":
