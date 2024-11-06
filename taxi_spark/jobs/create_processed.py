@@ -1,6 +1,10 @@
 import argparse
 
-from taxi_spark.functions.ml import prepare_features, train_linear_regression
+from taxi_spark.functions.ml import (
+    prepare_features,
+    train_linear_regression,
+    select_features_for_ml
+)
 from taxi_spark.functions.processing import (
     add_pickup_date,
     add_time_bins,
@@ -11,7 +15,6 @@ from taxi_spark.functions.processing import (
 from taxi_spark.functions.session import get_spark_session
 
 from log import logger
-import mlflow.pyfunc
 from google.cloud import storage
 from taxi_spark.functions import utils_gcp
 
@@ -57,6 +60,7 @@ def create_processed_pipeline(
 
     # train model
     logger.info('train model')
+    ml_df = select_features_for_ml(df)
     lr_model = train_linear_regression(ml_df)
     logger.info('model trained')
 
