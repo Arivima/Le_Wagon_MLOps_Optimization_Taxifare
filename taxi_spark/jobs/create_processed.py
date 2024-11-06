@@ -17,20 +17,7 @@ from taxi_spark.functions import utils_gcp
 
 import os, shutil
 import tempfile
-
-from pyspark.ml.regression import LinearRegressionModel
-
-
-class LinearRegressionWrapper(mlflow.pyfunc.PythonModel):
-    def load_context(self, context):
-        model_path = context.artifacts["model_path"]
-        self.model = LinearRegressionModel.load(model_path)  # Load Spark model here
-
-    def predict(self, context, model_input):
-        spark = get_spark_session()
-        spark_df = spark.createDataFrame(model_input)  # Convert input to Spark DataFrame
-        predictions = self.model.transform(spark_df)  # Run predictions in Spark
-        return predictions.toPandas()  # Return as pandas DataFrame for API use
+import json
 
 
 def create_processed_pipeline(
@@ -73,45 +60,71 @@ def create_processed_pipeline(
     lr_model = train_linear_regression(ml_df)
     logger.info('model trained')
 
-    # save model temporarily locally
-    with tempfile.TemporaryDirectory() as temp_dir:
-        spark_model_path = os.path.join(temp_dir, "spark_model")
-        pyfunc_model_path = os.path.join(temp_dir, "pyfunc_model")
+    # Save weights and intercept to gcs
+    # Extract weights (coefficients) and intercept
+    weights = lr_model.coefficients.toArray().tolist()
+    intercept = lr_model.intercept
+    model_params = {
+        "weights": weights,
+        "intercept": intercept
+    }
+    model_json = json.dumps(model_params)
+    prefix = "/".join(processed_uri_prefix.split("/")[3:])
+    gcp_json_path = f"{prefix}/json_model_yellow_tripdata_{date}.json"
 
-        # Save Spark model to spark_model_path with overwrite mode
-        logger.info(f"Saving Spark model at {spark_model_path}")
-        # mlflow.spark.save_model(spark_model=lr_model, path=local_model_path)
-        lr_model.write().overwrite().save(spark_model_path)
+    # Initialize GCS client
+    client = utils_gcp.connect_to_storage_client()
+    bucket = client.bucket(bucket_name)
 
-        # Save PyFunc model with the Spark model artifact included
-        logger.info(f"Saving PyFunc model at {pyfunc_model_path}")
-        mlflow.pyfunc.save_model(
-            path=pyfunc_model_path,
-            python_model=LinearRegressionWrapper(),
-            artifacts={"model_path": spark_model_path},
-        )
-        logger.info(f"Model saved locally at {pyfunc_model_path}")
+    # Delete existing JSON blob if it exists
+    utils_gcp.delete_existing_blobs(bucket_name, gcp_json_path)
+    blob = bucket.blob(gcp_json_path)
 
-        # Checking model is saved correctly locally
-        # if mlflow.spark.load_model(model_uri=local_model_path) is None:
-        if mlflow.pyfunc.load_model(model_uri=pyfunc_model_path) is None:
-            raise AssertionError("Model not saved correctly locally")
+    # Upload the JSON string to GCS
+    blob.upload_from_string(model_json, content_type="application/json")
+    logger.info(f"Model weights and intercept saved to GCS at gs://{bucket_name}/{gcp_json_path}")
+    blob.download_to_filename('/tmp/test.json')
 
-        # Delete existing blobs in GCS model path
-        logger.info('Delete existing blobs in GCS model path')
-        gcp_model_path = f"{processed_uri_prefix}/lr_model_yellow_tripdata_{date}"
-        utils_gcp.delete_existing_blobs(bucket_name, gcp_model_path)
 
-        # Upload local model directory to GCS
-        logger.info('Uploading model directory to GCS')
-        utils_gcp.upload_directory(pyfunc_model_path, bucket_name, gcp_model_path)
-        logger.info(f"Model uploaded to {gcp_model_path}")
+    # # save model temporarily locally
+    # with tempfile.TemporaryDirectory() as temp_dir:
+    #     spark_model_path = os.path.join(temp_dir, "spark_model")
+    #     pyfunc_model_path = os.path.join(temp_dir, "pyfunc_model")
 
-    # checking model is saved correctly on gcp
-    logger.info('check model is saved correctly on gcp')
-    # test_model_gcp = mlflow.spark.load_model(model_uri=gcp_model_path)
-    test_model_gcp = mlflow.pyfunc.load_model(model_uri=gcp_model_path)
-    logger.info(f"Model loaded for testing: {test_model_gcp is not None}")
+    #     # Save Spark model to spark_model_path with overwrite mode
+    #     logger.info(f"Saving Spark model at {spark_model_path}")
+    #     # mlflow.spark.save_model(spark_model=lr_model, path=local_model_path)
+    #     lr_model.write().overwrite().save(spark_model_path)
+
+    #     # Save PyFunc model with the Spark model artifact included
+    #     logger.info(f"Saving PyFunc model at {pyfunc_model_path}")
+    #     mlflow.pyfunc.save_model(
+    #         path=pyfunc_model_path,
+    #         python_model=LinearRegressionWrapper(),
+    #         artifacts={"model_path": spark_model_path},
+    #     )
+    #     logger.info(f"Model saved locally at {pyfunc_model_path}")
+
+    #     # Checking model is saved correctly locally
+    #     # if mlflow.spark.load_model(model_uri=local_model_path) is None:
+    #     if mlflow.pyfunc.load_model(model_uri=pyfunc_model_path) is None:
+    #         raise AssertionError("Model not saved correctly locally")
+
+    #     # Delete existing blobs in GCS model path
+    #     logger.info('Delete existing blobs in GCS model path')
+    #     gcp_model_path = f"{processed_uri_prefix}/lr_model_yellow_tripdata_{date}"
+    #     utils_gcp.delete_existing_blobs(bucket_name, gcp_model_path)
+
+    #     # Upload local model directory to GCS
+    #     logger.info('Uploading model directory to GCS')
+    #     utils_gcp.upload_directory(pyfunc_model_path, bucket_name, gcp_model_path)
+    #     logger.info(f"Model uploaded to {gcp_model_path}")
+
+    # # checking model is saved correctly on gcp
+    # logger.info('check model is saved correctly on gcp')
+    # # test_model_gcp = mlflow.spark.load_model(model_uri=gcp_model_path)
+    # test_model_gcp = mlflow.pyfunc.load_model(model_uri=gcp_model_path)
+    # logger.info(f"Model loaded for testing: {test_model_gcp is not None}")
 
 
     # prepare analyst_data
