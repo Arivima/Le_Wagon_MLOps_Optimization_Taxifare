@@ -1,5 +1,4 @@
 import argparse
-import joblib
 
 from taxi_spark.functions.ml import prepare_features, train_linear_regression
 from taxi_spark.functions.processing import (
@@ -10,6 +9,28 @@ from taxi_spark.functions.processing import (
     sort_by_date_and_time,
 )
 from taxi_spark.functions.session import get_spark_session
+
+from log import logger
+import mlflow.pyfunc
+from google.cloud import storage
+from taxi_spark.functions import utils_gcp
+
+import os, shutil
+import tempfile
+
+from pyspark.ml.regression import LinearRegressionModel
+
+
+class LinearRegressionWrapper(mlflow.pyfunc.PythonModel):
+    def load_context(self, context):
+        model_path = context.artifacts["model_path"]
+        self.model = LinearRegressionModel.load(model_path)  # Load Spark model here
+
+    def predict(self, context, model_input):
+        spark = get_spark_session()
+        spark_df = spark.createDataFrame(model_input)  # Convert input to Spark DataFrame
+        predictions = self.model.transform(spark_df)  # Run predictions in Spark
+        return predictions.toPandas()  # Return as pandas DataFrame for API use
 
 
 def create_processed_pipeline(
@@ -36,31 +57,65 @@ def create_processed_pipeline(
     Example:
     >>> create_processed_pipeline("gs://staging/data/data_1", "gs://processed/data", "2021-01-01")
     """
-    # $CHALLENGIFY_BEGIN
     spark = get_spark_session()
+    logger.info('starting spark session')
     df = spark.read.parquet(staging_uri)
+
+    # prepare model_data
+    logger.info('prepare model data')
     ml_df = prepare_features(df)
-    ml_df.write.parquet(
-        f"{processed_uri_prefix}/model_data_yellow_tripdata_{date}", mode="overwrite"
-    )
+    model_data_path = f"{processed_uri_prefix}/model_data_yellow_tripdata_{date}"
+    ml_df.write.parquet(model_data_path, mode="overwrite")
+    logger.info(f'analyst model saved at {model_data_path}')
+
+    # train model
+    logger.info('train model')
     lr_model = train_linear_regression(ml_df)
+    logger.info('model trained')
 
-    file_name = f"lr_model_yellow_tripdata_{date}.joblib"
+    # save model temporarily locally
+    with tempfile.TemporaryDirectory() as temp_dir:
+        spark_model_path = os.path.join(temp_dir, "spark_model")
+        pyfunc_model_path = os.path.join(temp_dir, "pyfunc_model")
 
-    # lr_model.write().overwrite().save(file_path)
+        # Save Spark model to spark_model_path with overwrite mode
+        logger.info(f"Saving Spark model at {spark_model_path}")
+        # mlflow.spark.save_model(spark_model=lr_model, path=local_model_path)
+        lr_model.write().overwrite().save(spark_model_path)
 
-    joblib.dump(lr_model, "./" + file_name, compress = 3)
+        # Save PyFunc model with the Spark model artifact included
+        logger.info(f"Saving PyFunc model at {pyfunc_model_path}")
+        mlflow.pyfunc.save_model(
+            path=pyfunc_model_path,
+            python_model=LinearRegressionWrapper(),
+            artifacts={"model_path": spark_model_path},
+        )
+        logger.info(f"Model saved locally at {pyfunc_model_path}")
 
-    blob_path = f"/processed/taxi_data/{file_name}"
+        # Checking model is saved correctly locally
+        # if mlflow.spark.load_model(model_uri=local_model_path) is None:
+        if mlflow.pyfunc.load_model(model_uri=pyfunc_model_path) is None:
+            raise AssertionError("Model not saved correctly locally")
 
-    from google.cloud import storage
-    srcPath = "./" + file_name
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(blob_path)
-    with open(srcPath, "w") as f:
-        blob.upload_from_file(f)
+        # Delete existing blobs in GCS model path
+        logger.info('Delete existing blobs in GCS model path')
+        gcp_model_path = f"{processed_uri_prefix}/lr_model_yellow_tripdata_{date}"
+        utils_gcp.delete_existing_blobs(bucket_name, gcp_model_path)
 
+        # Upload local model directory to GCS
+        logger.info('Uploading model directory to GCS')
+        utils_gcp.upload_directory(pyfunc_model_path, bucket_name, gcp_model_path)
+        logger.info(f"Model uploaded to {gcp_model_path}")
+
+    # checking model is saved correctly on gcp
+    logger.info('check model is saved correctly on gcp')
+    # test_model_gcp = mlflow.spark.load_model(model_uri=gcp_model_path)
+    test_model_gcp = mlflow.pyfunc.load_model(model_uri=gcp_model_path)
+    logger.info(f"Model loaded for testing: {test_model_gcp is not None}")
+
+
+    # prepare analyst_data
+    logger.info('prepare analyst data')
     df = add_time_bins(df)
     df = add_pickup_date(df)
     df = drop_coordinates(df)
@@ -69,7 +124,23 @@ def create_processed_pipeline(
     df.write.parquet(
         f"{processed_uri_prefix}/analyst_model_yellow_tripdata_{date}", mode="overwrite"
     )
-    # $CHALLENGIFY_END
+    logger.info('analyst data saved')
+
+
+    # lr_model.write().overwrite().save(file_path)
+    # file_name = f"lr_model_yellow_tripdata_{date}.joblib"
+    # joblib.dump(lr_model, "./" + file_name, compress = 3)
+
+    # blob_path = f"/processed/taxi_data/{file_name}"
+
+    # from google.cloud import storage
+    # srcPath = "./" + file_name
+    # storage_client = storage.Client()
+    # bucket = storage_client.bucket(bucket_name)
+    # blob = bucket.blob(blob_path)
+    # with open(srcPath, "w") as f:
+    #     blob.upload_from_file(f)
+
 
 
 def main() -> None:

@@ -1,4 +1,4 @@
-include ../../../make.inc
+# include ../../../make.inc
 include .env
 
 .PHONEY: submit-write-to-raw submit-staging-transform submit-create-processed test
@@ -6,6 +6,12 @@ include .env
 UUID := $(shell uuidgen | tr '[:upper:]' '[:lower:]')
 
 test: pytest-and-write-output
+
+# create_bucket:
+# 	gcloud storage buckets create \
+# 		"gs://$(BUCKET_NAME)" \
+# 		--location=$(BUCKET_LOCATION) \
+# 		--project=$(PROJECT_ID)
 
 create-cluster:
 	gcloud dataproc clusters create $(CLUSTER_NAME) \
