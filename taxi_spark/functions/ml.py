@@ -37,7 +37,7 @@ def select_features_for_ml(df : DataFrame) -> DataFrame:
 
     # apply same transfo
     # Convert to US/Eastern TZ-aware
-    X_pred['pickup_datetime'] = pd.to_datetime(X_pred['pickup_datetime']).dt.tz_localize("US/Eastern")
+    # X_pred['pickup_datetime'] = pd.to_datetime(X_pred['pickup_datetime']).dt.tz_localize("US/Eastern")
 
 
     # assemble selected columns into features
