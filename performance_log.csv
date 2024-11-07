@@ -1,14 +1,14 @@
-function,1 jours,15 jours,1 mois
-get_spark_session,5.6411,5.6710,5.5603
-read_parquet,6.9325,10.2144,6.9484
-remove_duplicates,0.0547,0.1109,0.0570
-handle_nulls,0.1786,0.4168,0.1674
-type_casting,0.1249,0.4362,0.1265
-normalize_strings,0.0790,0.5337,0.0819
-format_dates,0.0860,0.4824,0.0790
-filter_coordinates,0.1630,1.0076,0.1474
-calculate_trip_duration,0.0655,0.4156,0.0645
-calculate_haversine_distance,0.1177,1.0306,0.1188
-rename_columns,0.0484,0.2826,0.0543
-write_parquet,14.5010,108.2580,195.4699
-total_job_time,27.9934,128.8754,208.8768
+function,1 jours,15 jours,1 mois,3 mois,6 mois
+get_spark_session,5.6411,5.6710,5.5603,5.7371,5.7620
+read_parquet,6.9325,10.2144,6.9484,7.7105,9.2023
+remove_duplicates,0.0547,0.1109,0.0570,0.0665,0.0821
+handle_nulls,0.1786,0.4168,0.1674,0.2353,0.3074
+type_casting,0.1249,0.4362,0.1265,0.1833,0.2843
+normalize_strings,0.0790,0.5337,0.0819,0.1647,0.2775
+format_dates,0.0860,0.4824,0.0790,0.1555,0.2532
+filter_coordinates,0.1630,1.0076,0.1474,0.2941,0.5190
+calculate_trip_duration,0.0655,0.4156,0.0645,0.1242,0.2068
+calculate_haversine_distance,0.1177,1.0306,0.1188,0.2536,0.5458
+rename_columns,0.0484,0.2826,0.0543,0.0944,0.1743
+write_parquet,14.5010,108.2580,195.4699,523.3695,1042.4376
+total_job_time,27.9934,128.8754,208.8768,538.3940,1060.0638
