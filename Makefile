@@ -55,7 +55,7 @@ submit-staging-transform:
 		--region=europe-west1 \
 		--py-files="gs://$(BUCKET_NAME)/python/$(WHEEL_NAME)" \
 		taxi_spark/jobs/staging_transform.py -- \
-		"--date=$(DATE)" \
+		"--input=$(INPUT)" \
 		"--bucket=$(BUCKET_NAME)" \
 		"$(COM)" \
 		--save-local
