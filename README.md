@@ -1,4 +1,10 @@
-**This repository is part of a larger project.**
+***This repository is currently work in progress***
+
+
+------------------
+
+
+*This repository is part of a larger project.*
 
 # The Taxifare Optimization project
 
