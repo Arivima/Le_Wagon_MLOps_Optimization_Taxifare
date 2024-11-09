@@ -2,3 +2,5 @@ data
 dist
 logs
 database
+poetry.lock
+__pycache__
